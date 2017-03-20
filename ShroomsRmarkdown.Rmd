@@ -144,16 +144,12 @@ Model1 <-train(x=x_train,y=y_train,method="rpart",trControl=control.5,tuneLength
 
 Plots of parameter importanc and the trained tree
 
-plot(varImp(Model1),main="Importance plot with Rpart")
-
 
 ```{r RpartTree, echo=FALSE}
 plot(varImp(Model1),main="Importance plot with Rpart")
 
 rpart.plot(Model1$finalModel)
 
-#fancyRpartPlot(Model1$finalModel,main="Mushroom Attributes Classification",sub=NA,
-#               palettes=c("Greys","Oranges"))
 
 ```
 
@@ -172,7 +168,7 @@ confusionMatrix(table(df1$Orig,df1$Pred))
 
 ```
 
-Evaluation of Parameters
+*note to self* further work with Evaluation of Parameters
 
 ```{r Rpartmore, echo=TRUE, eval=FALSE}
 
@@ -251,7 +247,7 @@ confusionMatrix(table(df10$Orig,df10$Pred))
 
 ```{r GBMtrain, echo=TRUE}
 
-Model3<-train(x=x_train,y=y_train,method="gbm", trControl=Control.1,tuneLength=3,verbose=FALSE)
+Model3<-train(x=x_train,y=y_train,method="gbm", trControl=control.5,tuneLength=3,verbose=FALSE)
 
 ```
 
@@ -268,4 +264,10 @@ confusionMatrix(table(df3$Orig,df3$Pred))
 
 
 ```
+
+Comparing the the above three models is fairly difficult in this case.
+
+While Rpart tree only reached 99,88% accuracy, both GBM and Random Forest reached 100%
+
+Therefore being all other things equal, I'd select the one what has the least computing requirement for avaluations.
 

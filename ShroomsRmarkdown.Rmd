@@ -1,0 +1,271 @@
+---
+title: "ShroomsMarkdown"
+author: "TBoday"
+date: '2017 március 19 '
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(error = TRUE)
+```
+
+# Mushroom classification
+dataset used from https://www.kaggle.com/uciml/mushroom-classification/downloads/mushrooms.csv
+
+This is a true *classic* by all means. A fairly old database, which is available since the 70-es.
+
+
+#Let's start with the basics
+
+Initializing the environment, and loading libraries
+
+```{r libraries, include=TRUE, echo=FALSE}
+library(ggplot2)
+library(readr)
+library(caret)
+library(randomForest)
+library(caTools)
+library(rpart.plot)
+library(rattle)
+```
+
+Loading the dataset
+
+```{r dataimport, echo=TRUE}
+shrooms01<-read.csv("D:/Drive/!CEU/Data Science/Project/input/mushrooms.csv")
+
+```
+
+#A tiny bit of EDA
+
+Although the data set is known for it's cleanliness I start with some assesment
+
+First check of the contents for obvious issues
+
+```{r summary, echo=TRUE}
+
+summary(shrooms01)
+```
+
+
+
+Plotting does not help either
+
+```{r plotting, echo=TRUE}
+
+#plot(shrooms01)
+```
+
+
+
+It seems that there are no missing values, but apparently it does not show too much so far.
+
+Let's try in a different way, and calculate number of classes for each variable
+
+
+
+```{r variables, echo=TRUE}
+
+z<-cbind.data.frame(Var=names(shrooms01), Total_Class=sapply(shrooms01,function(x){as.numeric(length(levels(x)))}))
+print(z)
+
+```
+
+
+The only parameter what has no variability (it has only one level) is veil.type.
+
+Seems logical to drop it from the analysis as it would not affect the results
+
+
+```{r, echo=TRUE}
+
+shrooms01$veil.type<-NULL
+
+```
+
+Generating subsets of data
+
+Separating 75% to train, and 25% to test predictions
+
+
+```{r, echo=TRUE}
+
+set.seed(123) 
+
+N <- nrow(shrooms01)
+idx <- sample(1:N, 0.75*N)
+x_train <- shrooms01[idx,]
+x_test <- shrooms01[-idx,]
+
+
+y_train<-x_train$class
+y_test <- x_test$class
+
+```
+
+
+Here I make sure that the actual class (edible or not) is dropped from the test data
+
+
+```{r, echo=TRUE}
+
+x_train$class<-NULL
+x_test$class<-NULL
+```
+
+
+
+Bagging
+
+edit - I have actually created a second multifold with 20 folds, to be able to evaluate differences between the two methods.
+
+
+
+```{r, echo=TRUE}
+
+cv.5.folds<-createMultiFolds(y_train,k=5,times=2)
+control.5<-trainControl(method="repeatedcv",number=5,repeats=2,index=cv.5.folds)
+
+
+cv.10.folds<-createMultiFolds(y_train,k=10,times=2)
+control.10<-trainControl(method="repeatedcv",number=10,repeats=2,index=cv.10.folds)
+
+```
+
+#Let's build some decision trees with Rpart first
+
+
+```{r Rparttrain, echo=TRUE}
+
+
+Model1 <-train(x=x_train,y=y_train,method="rpart",trControl=control.5,tuneLength=5)
+```
+
+Plots of parameter importanc and the trained tree
+
+plot(varImp(Model1),main="Importance plot with Rpart")
+
+
+```{r RpartTree, echo=FALSE}
+plot(varImp(Model1),main="Importance plot with Rpart")
+
+rpart.plot(Model1$finalModel)
+
+#fancyRpartPlot(Model1$finalModel,main="Mushroom Attributes Classification",sub=NA,
+#               palettes=c("Greys","Oranges"))
+
+```
+
+
+And the confusion matrix for the trained model
+
+
+```{r rpartconfusionmatrix}
+
+y_predicted<-predict(Model1,x_test)
+
+df1<-data.frame(Orig=y_test,Pred=y_predicted)
+
+confusionMatrix(table(df1$Orig,df1$Pred))
+
+
+```
+
+Evaluation of Parameters
+
+```{r Rpartmore, echo=TRUE, eval=FALSE}
+
+
+args(rpart.control)
+md <- rpart(class ~ ., data = x_train, control = rpart.control(cp = 0))
+plot(md, uniform = TRUE, compress = TRUE)
+printcp(md)
+plotcp(md)
+prune(md, cp = 0.01)
+prune(md, cp = 0.0014995)   # min
+prune(md, cp = 0.0051546)
+
+
+
+```
+
+
+
+#Training a random Forest model
+
+
+```{r TrainRandomForest, echo=TRUE}
+
+RandomForest.5.cv<-train(x=x_train,y=y_train,method="rf",trControl=control.5,tuneLength=2)
+```
+
+Let's see what we got here
+
+
+```{r, echo=TRUE}
+
+
+plot(varImp(RandomForest.5.cv),main="Random Forest - Variable Importance Plot, 5 folds")
+
+```
+
+
+Looks good - actually too god as it shows 100% accuracy. Hope is it is not overfitted.
+
+This is what we get whet trying on the test sample
+
+
+
+```{r, echo=TRUE}
+
+
+y_predicted<-predict(RandomForest.5.cv,x_test)
+
+df5<-data.frame(Orig=y_test,Pred=y_predicted)
+
+confusionMatrix(table(df5$Orig,df5$Pred))
+
+
+```
+
+Let's have a look also on a 10 fold data.
+
+```{r, echo=TRUE, include=FALSE}
+
+RandomForest.10.cv<-train(x=x_train,y=y_train,method="rf",trControl=control.10,tuneLength=2)
+
+plot(varImp(RandomForest.10.cv),main="Random Forest - Variable Importance Plot, 10 folds")
+
+y_predicted<-predict(RandomForest.10.cv,x_test)
+
+df10<-data.frame(Orig=y_test,Pred=y_predicted)
+
+confusionMatrix(table(df10$Orig,df10$Pred))
+
+
+```
+
+
+#Model 3 GBM
+
+```{r GBMtrain, echo=TRUE}
+
+Model3<-train(x=x_train,y=y_train,method="gbm", trControl=Control.1,tuneLength=3,verbose=FALSE)
+
+```
+
+
+```{r GBMEval, echo=FALSE,}
+
+plot(varImp(Model3),main="Variable importance - GBM")
+
+y_predicted<-predict(Model3,x_test)
+
+df3<-data.frame(Orig=y_test,Pred=y_predicted)
+
+confusionMatrix(table(df3$Orig,df3$Pred))
+
+
+```
+

@@ -20,7 +20,7 @@ This is a true *classic* by all means. A fairly old database, which is available
 
 Initializing the environment, and loading libraries
 
-```{r libraries, include=TRUE, echo=FALSE}
+```{r libraries, include=TRUE, message=FALSE}
 library(ggplot2)
 library(readr)
 library(caret)
@@ -28,6 +28,9 @@ library(randomForest)
 library(caTools)
 library(rpart.plot)
 library(rattle)
+library(gbm)
+library(survival)
+library(plyr)
 ```
 
 Loading the dataset
@@ -54,7 +57,7 @@ Plotting does not help either
 
 ```{r plotting, echo=TRUE}
 
-#plot(shrooms01)
+#plot(shrooms01) # removed due to unusable and computing intensive output
 ```
 
 
@@ -133,22 +136,23 @@ control.10<-trainControl(method="repeatedcv",number=10,repeats=2,index=cv.10.fol
 
 ```
 
-#Let's build some decision trees with Rpart first
+#Let's build some decision trees with Rpart function of caret first
 
 
 ```{r Rparttrain, echo=TRUE}
 
 
-Model1 <-train(x=x_train,y=y_train,method="rpart",trControl=control.5,tuneLength=5)
+Model1 <-train(x=x_train,y=y_train,method="rpart",trControl=control.5,tuneLength=10)
 ```
 
-Plots of parameter importanc and the trained tree
+Plots of parameter importance and the trained tree
 
 
 ```{r RpartTree, echo=FALSE}
 plot(varImp(Model1),main="Importance plot with Rpart")
 
 rpart.plot(Model1$finalModel)
+
 
 
 ```
@@ -165,16 +169,61 @@ df1<-data.frame(Orig=y_test,Pred=y_predicted)
 
 confusionMatrix(table(df1$Orig,df1$Pred))
 
+trellis.par.set(caretTheme())
+plot(Model1, metric = "Kappa")
+
 
 ```
 
+
+```{r rpartalternatetuning, eval=FALSE}
+
+gbmGrid <-  expand.grid(interaction.depth = c(1, 2, 3, 4, 5, 7, 9), 
+                        n.trees = (1:30)*50, 
+                        shrinkage = 0.1,
+                        n.minobsinnode = 20)
+                        
+nrow(gbmGrid)
+
+set.seed(123)
+gbmFit2 <- train(class ~ ., data = x_train, 
+                 method = "gbm", 
+                 trControl = fitControl, 
+                 verbose = FALSE, 
+                 tuneGrid = gbmGrid)
+gbmFit2
+
+
+```
+
+
+
 *note to self* further work with Evaluation of Parameters
 
-```{r Rpartmore, echo=TRUE, eval=FALSE}
+currently getting error message from caret as data model is not a matrix 
 
 
+```{r Rparctrl, echo=TRUE, eval=FALSE}
+matrix_train <- as.matrix(x_train)
+
+ctrl <- trainControl(method = "repeatedcv", repeats = 3, classProbs = TRUE, summaryFunction = twoClassSummary)
+
+#plsFit <- train(Class ~ ., data = model.matrix(x_train), method = "pls", tuneLength = 15, trControl = ctrl, metric = "ROC", preProc = c("center", "scale"))
+
+plsFit <- train(Class ~ ., data = x_train, method = "pls", tuneLength = 15, trControl = ctrl, metric = "ROC", preProc = c("center", "scale")) # getting object is not a  matrix error
+
+
+plsClasses <- predict(plsFit, newdata = x_test)
+str(plsClasses)
+plot(plsFit)
+
+```
+
+
+```{r Rpartmore, echo=FALSE, eval=FALSE}
 args(rpart.control)
-md <- rpart(class ~ ., data = x_train, control = rpart.control(cp = 0))
+md <- rpart(class ~ ., data = x_train, control = rpart.control(cp = 0)) # getting object is not a  matrix error
+
 plot(md, uniform = TRUE, compress = TRUE)
 printcp(md)
 plotcp(md)
@@ -186,6 +235,32 @@ prune(md, cp = 0.0051546)
 
 ```
 
+
+
+
+```{r Rparttrainb, echo=TRUE}
+
+
+Model1 <-train(x=x_train,y=y_train,method="rpart",trControl=control.5,tuneLength=5)
+```
+
+
+```{r RpartTreeb, echo=FALSE}
+plot(varImp(Model1),main="Importance plot with Rpart")
+
+rpart.plot(Model1$finalModel)
+
+```
+```{r rpartconfusionmatrixb}
+
+y_predicted<-predict(Model1,x_test)
+
+df1<-data.frame(Orig=y_test,Pred=y_predicted)
+
+confusionMatrix(table(df1$Orig,df1$Pred))
+
+
+```
 
 
 #Training a random Forest model
@@ -222,12 +297,14 @@ df5<-data.frame(Orig=y_test,Pred=y_predicted)
 
 confusionMatrix(table(df5$Orig,df5$Pred))
 
+#trellis.par.set(caretTheme())
+#plot(RandomForest.5.cv, metric = "Kappa") #got to check these for future reference
 
 ```
 
 Let's have a look also on a 10 fold data.
 
-```{r, echo=TRUE, include=FALSE}
+```{r randomforest10fold, echo=TRUE}
 
 RandomForest.10.cv<-train(x=x_train,y=y_train,method="rf",trControl=control.10,tuneLength=2)
 
@@ -252,7 +329,7 @@ Model3<-train(x=x_train,y=y_train,method="gbm", trControl=control.5,tuneLength=3
 ```
 
 
-```{r GBMEval, echo=FALSE,}
+```{r GBMEval, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
 
 plot(varImp(Model3),main="Variable importance - GBM")
 
@@ -265,9 +342,15 @@ confusionMatrix(table(df3$Orig,df3$Pred))
 
 ```
 
-Comparing the the above three models is fairly difficult in this case.
+#Evaluation
 
-While Rpart tree only reached 99,88% accuracy, both GBM and Random Forest reached 100%
+Comparing the the above three models is fairly difficult in this specific case.
+
+
+It is apparent, that in the given dataset Odor was the strongest proxy, that alone predicts the class close to 100%
+
+
+While *Rpart tree only reached 99,88% accuracy*, both *GBM and Random Forest reached 100%*
 
 Therefore being all other things equal, I'd select the one what has the least computing requirement for avaluations.
 
